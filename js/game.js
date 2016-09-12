@@ -46,74 +46,6 @@ var GameObject = (function () {
     GameObject.prototype.OnActiveChanged = function (active) { };
     return GameObject;
 }());
-/// <reference path="V.ts" />
-var U = (function () {
-    function U() {
-    }
-    //Returns an int between low and high (exclusive)
-    U.RndI = function (low, high) {
-        if (low === void 0) { low = 0; }
-        if (high === void 0) { high = 1; }
-        return Math.floor((Math.random() * (high - low)) + low);
-    };
-    U.Clamp = function (val, min, max) {
-        return Math.min(Math.max(val, min), max);
-    };
-    U.DistSq = function (x1, y1, x2, y2) {
-        return (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2);
-    };
-    U.InRect = function (px, py, x, y, w, h) {
-        return (px >= x && px <= x + w && py >= y && py <= y + h);
-    };
-    U.DeserializeArray = function (jsonObjects, construct) {
-        if (jsonObjects == null || construct == null)
-            return null;
-        var l = [];
-        for (var i = 0; i < jsonObjects.length; i++) {
-            var nl = construct(jsonObjects[i]);
-            l.push(nl);
-        }
-        return l;
-    };
-    //Gets the closest line endpoint to the given coordinates
-    //returns either 1 or 2 for endpoint 1 or 2, -1 for neither, 3 for the midpoint
-    //max dist is the max distance away from either endopoint the given point is allowed to be
-    //if maxDist=-1 then the closest endpoint will be returned regardless (the midpoint will not be considered)
-    U.GetClosestEndpoint = function (x, y, l, maxDist) {
-        if (maxDist === void 0) { maxDist = -1; }
-        var dsq1 = U.DistSq(x, y, l.x1, l.y1);
-        var dsq2 = U.DistSq(x, y, l.x2, l.y2);
-        //Calculate middle of line
-        var x3 = (l.x1 + l.x2) / 2;
-        var y3 = (l.y1 + l.y2) / 2;
-        var dsq3 = U.DistSq(x, y, x3, y3);
-        if (maxDist == -1)
-            return (dsq1 < dsq2) ? 1 : 2;
-        else if (dsq3 < dsq1 && dsq3 < dsq2) {
-            if (dsq3 <= maxDist * maxDist)
-                return 3;
-        }
-        else if (dsq1 < dsq2) {
-            if (dsq1 <= maxDist * maxDist)
-                return 1;
-        }
-        else if (dsq2 <= maxDist * maxDist) {
-            return 2;
-        }
-        return -1;
-    };
-    //returns the closest point on a circle of center (cx,cy) and radius r to the given point(x,y)
-    U.ClosestPointOnCircle = function (x, y, cx, cy, r) {
-        //Get the normal of the vector from circle point to point x,y
-        //and multiply the unit vector by the circle's radius
-        var ce = new V(x - cx, y - cy).Unit().Mul(r);
-        ce.x += cx;
-        ce.y += cy;
-        return ce;
-    };
-    return U;
-}());
-/// <reference path="U.ts" />
 var V = (function () {
     function V(x, y) {
         if (x === void 0) { x = 0; }
@@ -136,7 +68,7 @@ var V = (function () {
     //     //first, find the scalar projection of this vector onto the unit vector u
     //     let proj:number = this.Dot(u);
     //     //Ok, now multiply our scalar projection onto the unit vector u and return it
-    //     return u.Copy().Mul(proj);
+    //     return Copy().Mul(proj);
     // }
     //Returns the magnitude of the vector
     V.prototype.Mag = function () {
@@ -212,7 +144,6 @@ var V = (function () {
 }());
 /// <reference path="GameObject.ts" />
 /// <reference path="V.ts" />
-/// <reference path="U.ts" />
 var PhysicsGameObject = (function (_super) {
     __extends(PhysicsGameObject, _super);
     /**@constructor*/
@@ -220,7 +151,7 @@ var PhysicsGameObject = (function (_super) {
         if (v === void 0) { v = new V(); }
         _super.call(this, x, y);
         this.acc = new V();
-        this.force = new V();
+        this.impulse = new V();
         this.mass = 1;
         this.maxVel = new V(Number.MAX_VALUE, Number.MAX_VALUE);
         this.minVel = new V(-Number.MAX_VALUE, -Number.MAX_VALUE);
@@ -230,23 +161,22 @@ var PhysicsGameObject = (function (_super) {
     PhysicsGameObject.prototype.Update = function (dt) {
         var nv = this.vel.Copy().Unit();
         var mag = this.vel.Mag();
-        this.dragMag.Set(Math.pow(mag, 2) * G.globalDrag.x, Math.pow(mag, 2) * G.globalDrag.y);
-        this.vel.x = U.Clamp(this.vel.x + (this.acc.x + G.globalAccel.x + (this.force.x / this.mass) - this.dragMag.x * nv.x) * dt, this.minVel.x, this.maxVel.x);
-        this.vel.y = U.Clamp(this.vel.y + (this.acc.y + G.globalAccel.y + (this.force.y / this.mass) - this.dragMag.y * nv.y) * dt, this.minVel.y, this.maxVel.y);
+        this.dragMag.Set(Math.pow(mag, 2) * globalDrag.x, Math.pow(mag, 2) * globalDrag.y);
+        this.vel.x = Clamp(this.vel.x + (this.acc.x + globalAccel.x + (this.impulse.x / this.mass) - this.dragMag.x * nv.x) * dt, this.minVel.x, this.maxVel.x);
+        this.vel.y = Clamp(this.vel.y + (this.acc.y + globalAccel.y + (this.impulse.y / this.mass) - this.dragMag.y * nv.y) * dt, this.minVel.y, this.maxVel.y);
         //  console.log(this.vel);
         //reset the instant force vector
-        this.force.Set(0, 0);
+        this.impulse.Set(0, 0);
         this.x += this.vel.x * dt;
         //positive velocity goes up but our y coord is backwards so...
         this.y -= this.vel.y * dt;
     };
-    PhysicsGameObject.prototype.ApplyForce = function (fx, fy) {
-        this.force.Set(fx, fy);
+    PhysicsGameObject.prototype.ApplyImpulse = function (fx, fy) {
+        this.impulse.Set(fx, fy);
     };
     return PhysicsGameObject;
 }(GameObject));
 /// <reference path="./Engine/PhysicsGameObject.ts" />
-/// <reference path="./Engine/U.ts" />
 /// <reference path="./Engine/V.ts" />
 var Bubble = (function (_super) {
     __extends(Bubble, _super);
@@ -262,7 +192,7 @@ var Bubble = (function (_super) {
         this.sx = 1;
         this.sy = 1;
         this.theta = 0;
-        this.z = G.LYR_BUBBLE;
+        this.z = LYR_BUBBLE;
         this.name = "bbl";
         this.Set(x, y, r, c);
     }
@@ -274,13 +204,13 @@ var Bubble = (function (_super) {
         this.mass = r / 100;
         this.scaleSpeed = 0;
         if (c == -1)
-            this.c = U.RndI(G.startBColorInd, G.bubbleColors.length);
+            this.c = RndI(startBColorInd, bubbleColors.length);
         else
             this.c = c;
     };
     //Here we allow some bubble overlap before we separate them because that's what bubbles do
     Bubble.prototype.Overlaps = function (other) {
-        var distSq = U.DistSq(this.x, this.y, other.x, other.y);
+        var distSq = DistSq(this.x, this.y, other.x, other.y);
         if (distSq < Math.pow(this.radius * 0.9 + other.radius * 0.9, 2)) {
             //normalize
             var vec = new V(this.x - other.x, this.y - other.y).Unit();
@@ -371,7 +301,7 @@ var Bubble = (function (_super) {
         this.sx = 1 + this.scaleMult * Math.sin(0.8 * this.theta);
         this.sy = 1 + this.scaleMult * 0.6 * Math.cos(this.theta);
         if (this.scaleSpeed > Bubble.restScaleSpeed) {
-            this.scaleSpeed -= this.scaleDiff / U.RndI(2, 3) * dt;
+            this.scaleSpeed -= this.scaleDiff / RndI(2, 3) * dt;
             this.scaleMult -= this.scaleMultDiff / 3 * dt;
             if (this.scaleSpeed <= Bubble.restScaleSpeed) {
                 this.scaleSpeed = Bubble.restScaleSpeed;
@@ -406,7 +336,7 @@ var Bubble = (function (_super) {
         //Fill the circle first
         ctx.globalCompositeOperation = 'lighter';
         ctx.globalAlpha = 0.8;
-        ctx.fillStyle = G.bubbleColors[this.c];
+        ctx.fillStyle = bubbleColors[this.c];
         ctx.beginPath();
         ctx.arc(x, y, this.radius, 0, 2 * Math.PI);
         ctx.fill();
@@ -426,45 +356,6 @@ var Bubble = (function (_super) {
     Bubble.opacity = 0.5;
     return Bubble;
 }(PhysicsGameObject));
-// /// <reference path="Engine/GameObject.ts" />
-// /// <reference path="Engine/U.ts" />
-// /// <reference path="Engine/V.ts" />
-// class BubbleMachine extends GameObject{
-//     static yAccel:number = 5;
-//     timer:number;
-//     yStartMin:number;
-//     yStartMax:number;
-//     xStartMin:number;
-//     xStartMax:number;
-//     minSVel:V;
-//     maxSVel:V;
-//     /**@constructor*/
-//     constructor(xstartMin:number, xstartMax:number, ystartMin:number, ystartMax:number, minSVel:V=new V(-20,-20), maxSVel:V=new V(20, 40)){
-//         super(0,0);
-//         this.name="BubbleMachine";
-//         this.timer = Math.random() * 1 + 0.125;
-//         this.yStartMin = ystartMin;
-//         this.yStartMax = ystartMax;
-//         this.xStartMin = xstartMin;
-//         this.xStartMax = xstartMax;
-//         this.minSVel = minSVel;
-//         this.maxSVel = maxSVel;
-//     }
-//     Update(dt:number){
-//         if(this.timer > 0){
-//             this.timer -= dt;
-//             if(this.timer <= 0)
-//             {
-//                 this.timer = (Math.random() * 1.25);
-//                 let b:Bubble = this.e.NewBubble(U.RndI(this.xStartMin, this.xStartMax), U.RndI(this.yStartMin, this.yStartMax), G.bubbleRad[U.RndI(0, G.bubbleRad.length)]);
-//                 if(b == null) return;
-//                 b.vel.Set(U.RndI(this.minSVel.x, this.maxSVel.x), U.RndI(this.minSVel.y, this.maxSVel.y));
-//                 //Slower bubbles accelerate more slowly
-//                 b.acc.y = BubbleMachine.yAccel - (b.radius / G.bubbleRad[G.bubbleRad.length-1]) * 0.5 * BubbleMachine.yAccel;
-//             }
-//         }
-//     }
-// } 
 /// <reference path="Engine/GameObject.ts" />
 /// <reference path="Engine/V.ts" />
 var Polygon = (function () {
@@ -479,10 +370,10 @@ var Polygon = (function () {
         if (this.v.length < 2)
             return;
         ctx.globalAlpha = this.a;
-        ctx.fillStyle = G.bubbleColors[this.c];
+        ctx.fillStyle = bubbleColors[this.c];
         ctx.beginPath();
         if (this.v.length == 2) {
-            ctx.strokeStyle = G.bubbleColors[this.c];
+            ctx.strokeStyle = bubbleColors[this.c];
             ctx.moveTo(this.v[0].x, this.v[0].y);
             ctx.lineTo(this.v[1].x, this.v[1].y);
             ctx.stroke();
@@ -588,13 +479,134 @@ var BubblePen = (function () {
                 s = this.currentNum + " of " + this.req;
             else
                 s = "Full";
-            GText.DrawTxt(ctx, s, this.p.centroid.x, this.p.centroid.y, "center", "middle", f);
+            DrawTxt(ctx, s, this.p.centroid.x, this.p.centroid.y, "center", "middle", f);
             if (!this.pure)
-                GText.DrawTxt(ctx, "Error!", this.p.centroid.x, this.p.centroid.y + 20, "center", "middle", f);
+                DrawTxt(ctx, "Error!", this.p.centroid.x, this.p.centroid.y + 20, "center", "middle", f);
         }
     };
     return BubblePen;
 }());
+//Global physics stuff
+var globalAccel = new V();
+var globalDrag = new V(0.005, 0);
+var maxBubbles = 150;
+//Index 0 is the "All Bubble" color
+var bubbleColors = ['White', 'Gray', 'Yellow', 'Cyan', 'Red', 'Green', 'RoyalBlue', 'Orange'];
+var startBColorInd = 2;
+var bubbleRad = [15, 25, 35];
+var bmaxVel = new V(140, 90);
+var bminVel = new V(-140, -90);
+var bubbleGrowthRate = 25;
+var fanLen = 140;
+var PIN_SIZE = 12;
+var lvlAllGoodWait = 2; //Time in seconds to wait after level win checks return true
+//Layers
+var LYR_BUBBLE = 1;
+var LYR_LINE = 1;
+var LYR_HOPPER = 3;
+var LYR_TEXT = 5;
+var LYR_BUTTON = 10;
+var lineSolid = [1, 0];
+var lineDash = [5, 8];
+//Editor stuff
+var ED_SELECT_DIST = 8;
+//Local storage
+var ST_LVL = "cl";
+//Level Draw Modes
+var MODE_EDITOR = 0;
+var MODE_GAME = 1;
+var MODE_IN_GAME_EDITOR = 2;
+var FONT_FAMILY = "Arial";
+var LIVE_EDIT_BLINK_TIME = 0.75;
+var TITLE_DISPLAY_TIME = 3;
+//For text alignment, see: http://www.w3schools.com/tags/canvas_textalign.asp
+//valid horizontal align values are: left, center, right
+//valid vertical align values are: top, bottom, middle, alphabetic, hanging
+function DrawTxt(ctx, txt, x, y, hAlign, vAlign, color, font, alpha) {
+    if (hAlign === void 0) { hAlign = "left"; }
+    if (vAlign === void 0) { vAlign = "middle"; }
+    if (color === void 0) { color = 'White'; }
+    if (font === void 0) { font = "20px " + FONT_FAMILY; }
+    if (alpha === void 0) { alpha = 1; }
+    ctx.globalAlpha = alpha;
+    ctx.font = "900 " + font;
+    ctx.fillStyle = color;
+    ctx.textAlign = hAlign;
+    ctx.textBaseline = vAlign;
+    ctx.fillText(txt, x, y);
+}
+//Returns an int between low and high (exclusive)
+function RndI(low, high) {
+    if (low === void 0) { low = 0; }
+    if (high === void 0) { high = 1; }
+    return Math.floor((Math.random() * (high - low)) + low);
+}
+function Clamp(val, min, max) {
+    return Math.min(Math.max(val, min), max);
+}
+function DistSq(x1, y1, x2, y2) {
+    return (x1 - x2) * (x1 - x2) + (y1 - y2) * (y1 - y2);
+}
+function InRect(px, py, x, y, w, h) {
+    return (px >= x && px <= x + w && py >= y && py <= y + h);
+}
+function DeserializeArray(jsonObjects, construct) {
+    if (jsonObjects == null || construct == null)
+        return null;
+    var l = [];
+    for (var i = 0; i < jsonObjects.length; i++) {
+        var nl = construct(jsonObjects[i]);
+        l.push(nl);
+    }
+    return l;
+}
+//Gets the closest line endpoint to the given coordinates
+//returns either 1 or 2 for endpoint 1 or 2, -1 for neither, 3 for the midpoint
+//max dist is the max distance away from either endopoint the given point is allowed to be
+//if maxDist=-1 then the closest endpoint will be returned regardless (the midpoint will not be considered)
+function GetClosestEndpoint(x, y, l, maxDist) {
+    if (maxDist === void 0) { maxDist = -1; }
+    var dsq1 = DistSq(x, y, l.x1, l.y1);
+    var dsq2 = DistSq(x, y, l.x2, l.y2);
+    //Calculate middle of line
+    var x3 = (l.x1 + l.x2) / 2;
+    var y3 = (l.y1 + l.y2) / 2;
+    var dsq3 = DistSq(x, y, x3, y3);
+    if (maxDist == -1)
+        return (dsq1 < dsq2) ? 1 : 2;
+    else if (dsq3 < dsq1 && dsq3 < dsq2) {
+        if (dsq3 <= maxDist * maxDist)
+            return 3;
+    }
+    else if (dsq1 < dsq2) {
+        if (dsq1 <= maxDist * maxDist)
+            return 1;
+    }
+    else if (dsq2 <= maxDist * maxDist) {
+        return 2;
+    }
+    return -1;
+}
+//returns the closest point on a circle of center (cx,cy) and radius r to the given point(x,y)
+function ClosestPointOnCircle(x, y, cx, cy, r) {
+    //Get the normal of the vector from circle point to point x,y
+    //and multiply the unit vector by the circle's radius
+    var ce = new V(x - cx, y - cy).Unit().Mul(r);
+    ce.x += cx;
+    ce.y += cy;
+    return ce;
+}
+var levels = { Lvls: [
+        // {lines:[{x1:201,y1:118,x2:198,y2:374},{x1:201,y1:118,x2:300,y2:193},{x1:298,y1:194,x2:202,y2:257},{x1:202,y1:256,x2:297,y2:317},{x1:297,y1:318,x2:198,y2:374},{x1:315,y1:247,x2:314,y2:361},{x1:315,y1:360,x2:381,y2:360},{x1:380,y1:359,x2:382,y2:245},{x1:422,y1:247,x2:496,y2:295},{x1:497,y1:296,x2:421,y2:362},{x1:502,y1:148,x2:502,y2:356},{x1:504,y1:253,x2:570,y2:283},{x1:570,y1:282,x2:502,y2:355},{x1:585,y1:152,x2:584,y2:360},{x1:619,y1:305,x2:697,y2:302},{x1:699,y1:302,x2:653,y2:256},{x1:653,y1:256,x2:619,y2:306},{x1:619,y1:306,x2:647,y2:360},{x1:647,y1:360,x2:694,y2:335},{x1:311,y1:386,x2:405,y2:388},{x1:353,y1:386,x2:353,y2:508},{x1:399,y1:436,x2:399,y2:508},{x1:400,y1:455,x2:429,y2:435},{x1:429,y1:435,x2:450,y2:449},{x1:478,y1:429,x2:455,y2:508},{x1:463,y1:482,x2:496,y2:481},{x1:478,y1:429,x2:506,y2:508},{x1:539,y1:426,x2:538,y2:506},{x1:539,y1:426,x2:584,y2:455},{x1:584,y1:455,x2:540,y2:475},{x1:421,y1:362,x2:421,y2:148}],bi:[{x:653,y:276,r:15,c:3},{x:640,y:290,r:15,c:3},{x:555,y:452,r:15,c:2},{x:468,y:498,r:15,c:1},{x:493,y:497,r:15,c:1},{x:673,y:291,r:15,c:3},{x:550,y:454,r:15,c:2},{x:479,y:472,r:15,c:1},{x:224,y:165,r:25,c:7},{x:260,y:191,r:25,c:7},{x:224,y:213,r:25,c:7},{x:255,y:316,r:25,c:6},{x:221,y:296,r:25,c:6},{x:218,y:337,r:25,c:6},{x:438,y:320,r:25,c:5},{x:463,y:301,r:25,c:5},{x:445,y:288,r:25,c:5},{x:515,y:319,r:15,c:4},{x:530,y:298,r:15,c:4},{x:518,y:278,r:15,c:4},{x:548,y:289,r:15,c:4}]}
+        // ,
+        { t: "Plug the Hole", lines: [{ x1: 899, y1: 519, x2: 610, y2: 462 }, { x1: 1, y1: 518, x2: 273, y2: 463 }, { x1: 384, y1: 595, x2: 351, y2: 460 }, { x1: 502, y1: 597, x2: 535, y2: 460 }, { x1: 535, y1: 460, x2: 351, y2: 460 }, { x1: 610, y1: 462, x2: 565, y2: 268 }, { x1: 565, y1: 268, x2: 617, y2: 109 }, { x1: 617, y1: 109, x2: 234, y2: 110 }, { x1: 234, y1: 110, x2: 299, y2: 271 }, { x1: 299, y1: 271, x2: 273, y2: 463 }, { x1: 366, y1: 522, x2: 317, y2: 535 }], pens: [{ req: 5, p: { c: 4, v: [{ x: 235, y: 112 }, { x: 614, y: 110 }, { x: 564, y: 269 }, { x: 299, y: 271 }] } }], hoppers: [{ x: 41, y: 563, c: 2, s: 70, rate: 1, cap: 5, rot: 75 }, { x: 860, y: 563, c: 4, s: 70, rate: 1, cap: 5, rot: 285 }] },
+        { t: "Make it Crowded", lines: [{ x1: 444, y1: 307, x2: 508, y2: 441 }, { x1: 508, y1: 441, x2: 383, y2: 441 }, { x1: 444, y1: 307, x2: 383, y2: 441 }, { x1: 492, y1: 408, x2: 608, y2: 236 }, { x1: 398, y1: 410, x2: 288, y2: 241 }, { x1: 310, y1: 153, x2: 591, y2: 153 }, { x1: 591, y1: 153, x2: 608, y2: 236 }, { x1: 288, y1: 241, x2: 310, y2: 153 }], pens: [{ req: 3, p: { c: 6, a: 0.4, v: [{ x: 311, y: 153 }, { x: 589, y: 155 }, { x: 607, y: 235 }, { x: 492, y: 405 }, { x: 443, y: 307 }, { x: 398, y: 407 }, { x: 289, y: 239 }] } }], bi: [{ x: 441, y: 412, r: 15, c: 6 }, { x: 431, y: 385, r: 15, c: 6 }, { x: 457, y: 384, r: 15, c: 6 }, { x: 471, y: 415, r: 15, c: 6 }, { x: 445, y: 360, r: 15, c: 6 }, { x: 419, y: 411, r: 15, c: 6 }] },
+        { t: "Dashed Lines Discriminate", lines: [{ x1: 715, y1: 465, x2: 559, y2: 325 }, { x1: 208, y1: 477, x2: 356, y2: 332 }, { x1: 356, y1: 332, x2: 357, y2: 296 }, { x1: 357, y1: 296, x2: 282, y2: 296 }, { x1: 282, y1: 296, x2: 258, y2: 181 }, { x1: 559, y1: 325, x2: 558, y2: 290 }, { x1: 558, y1: 290, x2: 640, y2: 290 }, { x1: 640, y1: 290, x2: 651, y2: 175 }, { x1: 258, y1: 181, x2: 651, y2: 175, ue: true, c: 7, dashed: true }], pens: [{ req: 6, p: { c: 7, v: [{ x: 259, y: 180 }, { x: 650, y: 175 }, { x: 638, y: 288 }, { x: 283, y: 294 }] }, x: 0, y: 0 }], hoppers: [{ x: 405, y: 557, c: 4, rate: 0.5, cap: 5, s: 45 }, { x: 501, y: 557, c: 7, rate: 0.5, cap: 6, s: 45 }] },
+        { t: "Popping Pins", pins: [{ x: 539, y: 372, ue: true }, { x: 501, y: 373, ue: true }, { x: 459, y: 374, c: 3, ue: true }, { x: 417, y: 374, c: 3, ue: true }, { x: 383, y: 375, ue: true }, { x: 349, y: 376, ue: true }], lines: [{ x1: 651, y1: 530, x2: 568, y2: 376 }, { x1: 265, y1: 527, x2: 340, y2: 390 }, { x1: 265, y1: 527, x2: 333, y2: 597 }, { x1: 651, y1: 530, x2: 590, y2: 596 }, { x1: 568, y1: 376, x2: 597, y2: 173 }, { x1: 340, y1: 390, x2: 325, y2: 178 }, { x1: 597, y1: 173, x2: 895, y2: 4 }, { x1: 895, y1: 4, x2: 1, y2: 2 }, { x1: 1, y1: 2, x2: 325, y2: 178 }, { x1: 336, y1: 3, x2: 413, y2: 155 }, { x1: 499, y1: 151, x2: 584, y2: 3 }], pens: [{ req: 4, p: { c: 4, v: [{ x: 411, y: 153 }, { x: 324, y: 176 }, { x: 7, y: 2 }, { x: 337, y: 5 }] } }, { req: 4, p: { c: 7, v: [{ x: 339, y: 3 }, { x: 581, y: 4 }, { x: 498, y: 149 }, { x: 412, y: 151 }] } }, { req: 4, p: { c: 6, v: [{ x: 893, y: 4 }, { x: 597, y: 173 }, { x: 500, y: 149 }, { x: 584, y: 6 }] } }], hoppers: [{ x: 411, y: 563, c: 7, s: 70, rate: 1 }, { x: 506, y: 563, c: 3, s: 70, rate: 1 }, { x: 609, y: 521, c: 6, s: 70, rate: 1, rot: -45 }, { x: 309, y: 521, c: 4, s: 70, rate: 1, rot: 45 }] },
+        { t: "Pushy", lines: [{ x1: 604, y1: 3, x2: 604, y2: 278 }, { x1: 333, y1: 0, x2: 333, y2: 278 }, { x1: 333, y1: 278, x2: 213, y2: 262 }, { x1: 213, y1: 262, x2: 162, y2: 227 }, { x1: 604, y1: 278, x2: 754, y2: 267 }, { x1: 754, y1: 267, x2: 808, y2: 227 }, { x1: 604, y1: 3, x2: 898, y2: 3 }, { x1: 898, y1: 3, x2: 898, y2: 155 }, { x1: 333, y1: 0, x2: 3, y2: 0 }, { x1: 3, y1: 0, x2: 3, y2: 111 }], pens: [{ req: 5, p: { c: 2, v: [{ x: 604, y: 277 }, { x: 753, y: 267 }, { x: 898, y: 156 }, { x: 898, y: 3 }, { x: 604, y: 3 }] } }, { req: 5, p: { c: 5, v: [{ x: 333, y: 277 }, { x: 213, y: 261 }, { x: 0, y: 111 }, { x: 1, y: 0 }, { x: 333, y: 1 }] } }], fans: [{ f: 40, rot: -90, x: 626, y: 331, ue: true, aLen: 300 }, { f: 40, rot: 90, x: 324, y: 415, ue: true, aLen: 300 }], hoppers: [{ x: 407, y: 561, c: 5, s: 70, rate: 0.5, cap: 5 }, { x: 515, y: 562, c: 2, s: 70, rate: 0.75, cap: 5 }] },
+        { t: "Traffic Jam", lines: [{ x1: 0, y1: 595, x2: 898, y2: 595 }, { x1: 764, y1: 0, x2: 551, y2: 205 }, { x1: 901, y1: 174, x2: 615, y2: 274 }, { x1: 140, y1: 0, x2: 355, y2: 209 }, { x1: 0, y1: 127, x2: 283, y2: 281 }, { x1: 900, y1: 495, x2: 615, y2: 274 }, { x1: 780, y1: 596, x2: 551, y2: 318 }, { x1: 0, y1: 462, x2: 283, y2: 281 }, { x1: 358, y1: 324, x2: 132, y2: 594 }, { x1: 447, y1: 0, x2: 447, y2: 213 }, { x1: 900, y1: 1, x2: 0, y2: 0 }, { x1: 448, y1: 310, x2: 448, y2: 596 }], pens: [{ req: 8, p: { c: 4, v: [{ x: 143, y: 2 }, { x: 445, y: 4 }, { x: 447, y: 206 }, { x: 353, y: 207 }] } }, { req: 8, p: { c: 5, v: [{ x: 447, y: 3 }, { x: 761, y: 2 }, { x: 551, y: 203 }, { x: 447, y: 205 }] } }, { req: 8, p: { c: 6, v: [{ x: 134, y: 591 }, { x: 445, y: 593 }, { x: 445, y: 327 }, { x: 356, y: 325 }] } }, { req: 8, p: { c: 2, v: [{ x: 775, y: 592 }, { x: 448, y: 593 }, { x: 446, y: 329 }, { x: 552, y: 320 }] } }], fans: [{ f: 50, rot: -120, x: 717, y: 165, ue: true, c: 6, aLen: 200 }, { f: 50, rot: -405, x: 691, y: 406, ue: true, c: 4, aLen: 200 }, { f: 50, rot: -315, x: 248, y: 366, ue: true, c: 5, aLen: 200 }, { f: 50, rot: -585, x: 210, y: 148, ue: true, c: 2, aLen: 200 }], hoppers: [{ x: 858, y: 47, c: 2, s: 130, rate: 0.5, cap: 8, rot: 225 }, { x: 855, y: 556, c: 5, s: 70, rate: 0.25, cap: 8, rot: 315 }, { x: 48, y: 555, c: 4, s: 70, rate: 0.25, cap: 8, rot: 405 }, { x: 45, y: 47, c: 6, s: 130, rate: 0.5, cap: 8, rot: 495 }] },
+        { t: "Factorio", pins: [{ x: 253, y: 262, ue: true }, { x: 259, y: 298, ue: true }, { x: 239, y: 231, c: 6, ue: true }, { x: 264, y: 343, c: 7, ue: true }], lines: [{ x1: 1, y1: 521, x2: 248, y2: 499 }, { x1: 248, y1: 499, x2: 220, y2: 436 }, { x1: 220, y1: 436, x2: 255, y2: 370 }, { x1: 255, y1: 370, x2: 414, y2: 360 }, { x1: 414, y1: 360, x2: 435, y2: 416 }, { x1: 435, y1: 416, x2: 404, y2: 488 }, { x1: 248, y1: 499, x2: 404, y2: 488, ue: true, c: 3, dashed: true }, { x1: 414, y1: 360, x2: 603, y2: 349 }, { x1: 603, y1: 349, x2: 633, y2: 402 }, { x1: 633, y1: 402, x2: 588, y2: 480 }, { x1: 25, y1: 432, x2: 209, y2: 424, ue: true, c: 7, dashed: true }, { x1: 588, y1: 480, x2: 777, y2: 457, ue: true, c: 4 }, { x1: 777, y1: 457, x2: 752, y2: 387 }, { x1: 752, y1: 387, x2: 765, y2: 330 }, { x1: 765, y1: 330, x2: 899, y2: 298 }, { x1: 771, y1: 235, x2: 748, y2: 4 }, { x1: 172, y1: 233, x2: 1, y2: 254 }, { x1: 262, y1: 223, x2: 312, y2: 138 }, { x1: 312, y1: 50, x2: 262, y2: 3 }, { x1: 535, y1: 3, x2: 521, y2: 230 }, { x1: 899, y1: 4, x2: 262, y2: 3 }, { x1: 603, y1: 349, x2: 694, y2: 233, ue: true, c: 2 }, { x1: 262, y1: 223, x2: 521, y2: 230 }, { x1: 521, y1: 230, x2: 694, y2: 233, c: 4, dashed: true }, { x1: 771, y1: 235, x2: 694, y2: 233 }, { x1: 603, y1: 349, x2: 521, y2: 230, c: 6, ue: true }], pens: [{ req: 4, p: { c: 2, v: [{ x: 256, y: 370 }, { x: 412, y: 362 }, { x: 434, y: 415 }, { x: 404, y: 486 }, { x: 247, y: 497 }, { x: 221, y: 437 }] } }, { req: 4, p: { c: 6, v: [{ x: 416, y: 362 }, { x: 603, y: 350 }, { x: 629, y: 403 }, { x: 586, y: 481 }, { x: 407, y: 485 }, { x: 435, y: 416 }] } }, { req: 4, p: { c: 3, v: [{ x: 897, y: 299 }, { x: 766, y: 332 }, { x: 753, y: 388 }, { x: 776, y: 456 }, { x: 898, y: 454 }] } }, { req: 7, p: { c: 7, v: [{ x: 749, y: 5 }, { x: 897, y: 5 }, { x: 898, y: 235 }, { x: 771, y: 235 }] } }, { req: 5, p: { c: 5, v: [{ x: 259, y: 3 }, { x: 532, y: 4 }, { x: 519, y: 229 }, { x: 264, y: 222 }, { x: 311, y: 138 }, { x: 312, y: 50 }] } }, { req: 7, p: { c: 4, v: [{ x: 535, y: 5 }, { x: 748, y: 4 }, { x: 769, y: 234 }, { x: 522, y: 227 }] } }], fans: [{ f: 5, rot: 90, x: 234, y: 556, ue: true, aLen: 380 }, { f: 50, rot: 30, x: 160, y: 331, ue: true, c: 5, aLen: 205 }, { f: 10, rot: -90, x: 756, y: 265, ue: true, c: 6, aLen: 395 }, { f: 40, x: 693, y: 578, aLen: 240, ue: true }], hoppers: [{ x: 38, y: 563, s: 90, rate: 1, rot: 90 }] }
+    ] };
 var Fan = (function () {
     /**@constructor*/
     function Fan(params) {
@@ -611,7 +623,7 @@ var Fan = (function () {
         this.c = (params.c == undefined) ? 0 : params.c;
         this.rot = (params.rot == undefined) ? 0 : params.rot;
         this.f = (params.f == undefined) ? 10 : params.f;
-        this.aLen = (params.aLen == undefined) ? G.fanLen : params.aLen;
+        this.aLen = (params.aLen == undefined) ? fanLen : params.aLen;
         //This will become our
         this.blowVec = new V(0, 1);
         //Setup poly for 0 angle rotation
@@ -652,9 +664,9 @@ var Fan = (function () {
     //but also include points above , below and to the side of the center
     Fan.prototype.Blow = function (bubbles) {
         for (var i = 0; i < bubbles.length; i++) {
-            if ((this.c == bubbles[i].c || this.c < G.startBColorInd)) {
+            if ((this.c == bubbles[i].c || this.c < startBColorInd)) {
                 if (this.wp.CircleInPoly(bubbles[i].x, bubbles[i].y, bubbles[i].radius))
-                    bubbles[i].ApplyForce(this.blowVec.x * this.f, this.blowVec.y * this.f);
+                    bubbles[i].ApplyImpulse(this.blowVec.x * this.f, this.blowVec.y * this.f);
             }
         }
     };
@@ -665,14 +677,14 @@ var Fan = (function () {
     };
     Fan.prototype.DrawEditGizmos = function (ctx, mode) {
         ctx.globalAlpha = 1;
-        if (mode != G.MODE_GAME) {
+        if (mode != MODE_GAME) {
             this.wp.c = this.c;
             this.wp.Draw(ctx);
         }
         ctx.globalAlpha = 0.4;
-        ctx.fillStyle = G.bubbleColors[this.c];
+        ctx.fillStyle = bubbleColors[this.c];
         ctx.beginPath();
-        ctx.arc(this.rp.x, this.rp.y, G.ED_SELECT_DIST, 0, 2 * Math.PI);
+        ctx.arc(this.rp.x, this.rp.y, ED_SELECT_DIST, 0, 2 * Math.PI);
         ctx.fill();
         //Draw a line from the center dot to the rotate dot
         ctx.strokeStyle = 'rgba(128, 128, 128, 0.4)';
@@ -682,12 +694,12 @@ var Fan = (function () {
         //Draw the center rect to indicate this object is user-editable
         if (this.ue) {
             ctx.beginPath();
-            ctx.rect(this.x - G.ED_SELECT_DIST * 2, this.y - G.ED_SELECT_DIST * 2, G.ED_SELECT_DIST * 4, G.ED_SELECT_DIST * 4);
+            ctx.rect(this.x - ED_SELECT_DIST * 2, this.y - ED_SELECT_DIST * 2, ED_SELECT_DIST * 4, ED_SELECT_DIST * 4);
             ctx.fill();
         }
         //Draw editor info
-        if (mode == G.MODE_EDITOR) {
-            GText.DrawTxt(ctx, "L:" + this.aLen + "\nF:" + this.f, this.wp.centroid.x, this.wp.centroid.y, 'center');
+        if (mode == MODE_EDITOR) {
+            DrawTxt(ctx, "L:" + this.aLen + "\nF:" + this.f, this.wp.centroid.x, this.wp.centroid.y, 'center');
         }
     };
     Fan.prototype.Draw = function (ctx, drawPoly) {
@@ -700,7 +712,7 @@ var Fan = (function () {
         ctx.rotate((this.rot) * Math.PI / 180);
         ctx.translate(-this.x, -this.y);
         ctx.globalAlpha = 0.7;
-        ctx.fillStyle = G.bubbleColors[this.c];
+        ctx.fillStyle = bubbleColors[this.c];
         ctx.fillRect(lx, cy, Fan.width, Fan.height);
         // ctx.strokeRect(this.gameObject.pos.x, this.gameObject.pos.y, 20, 50));
         //Fan shaft (from the middle to the back)
@@ -712,9 +724,9 @@ var Fan = (function () {
         ctx.lineTo(lx + Fan.width / 2, cy + Fan.height);
         ctx.stroke();
         //Front of the fan
-        ctx.strokeStyle = G.bubbleColors[this.c];
+        ctx.strokeStyle = bubbleColors[this.c];
         ctx.lineCap = 'round';
-        ctx.setLineDash(G.lineSolid);
+        ctx.setLineDash(lineSolid);
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(lx, cy);
@@ -738,106 +750,7 @@ var Fan = (function () {
     Fan.bladeWidth = Math.floor(Fan.height * .5);
     return Fan;
 }());
-var G = (function () {
-    function G() {
-    }
-    //Global physics stuff
-    G.globalAccel = new V();
-    G.globalDrag = new V(0.005, 0);
-    /**@const */
-    G.maxBubbles = 150;
-    /**@const */
-    G.allBubbleColor = 'White';
-    //Index 0 is the "All Bubble" color
-    G.bubbleColors = [G.allBubbleColor, 'Gray', 'Yellow', 'Cyan', 'Red', 'Green', 'RoyalBlue', 'Orange'];
-    /**@const */
-    G.startBColorInd = 2;
-    G.bubbleRad = [15, 25, 35];
-    G.bmaxVel = new V(140, 90);
-    G.bminVel = new V(-140, -90);
-    /**@const */
-    G.bubbleGrowthRate = 25;
-    /**@const
-    * The distance at which the fan affects bubbles */
-    G.fanLen = 140;
-    /**@const */
-    G.PIN_SIZE = 12;
-    /**@const */
-    G.lvlAllGoodWait = 2; //Time in seconds to wait after level win checks return true
-    //Layers
-    /**@const */
-    G.LYR_BUBBLE = 1;
-    /**@const */
-    G.LYR_LINE = 1;
-    /**@const */
-    G.LYR_HOPPER = 3;
-    /**@const */
-    G.LYR_TEXT = 5;
-    /**@const */
-    G.LYR_BUTTON = 10;
-    G.lineSolid = [1, 0];
-    G.lineDash = [5, 8];
-    //Editor stuff
-    /**@const */
-    G.ED_SELECT_DIST = 8;
-    //Local storage
-    /**@const */
-    G.ST_LVL = "cl";
-    //Level Draw Modes
-    /**@const */
-    G.MODE_EDITOR = 0;
-    /**@const */
-    G.MODE_GAME = 1;
-    /**@const */
-    G.MODE_IN_GAME_EDITOR = 2;
-    /**@const */
-    G.FONT_FAMILY = "Arial";
-    /**@const */
-    G.LIVE_EDIT_BLINK_TIME = 0.75;
-    /**@const */
-    G.TITLE_DISPLAY_TIME = 3;
-    return G;
-}());
-var GText = (function (_super) {
-    __extends(GText, _super);
-    /**@constructor*/
-    function GText(x, y, text, hAlign, vAlign, color, font) {
-        if (hAlign === void 0) { hAlign = "left"; }
-        if (vAlign === void 0) { vAlign = "middle"; }
-        if (color === void 0) { color = 'white'; }
-        if (font === void 0) { font = "20px " + G.FONT_FAMILY; }
-        _super.call(this, x, y);
-        this.z = G.LYR_TEXT;
-        this.font = "900 " + font;
-        this.text = text;
-        this.c = color;
-        this.hAlign = hAlign;
-        this.vAlign = vAlign;
-        //this.fontSize = Number(font);
-    }
-    GText.prototype.Draw = function (ctx) {
-        GText.DrawTxt(ctx, this.text, this.x, this.y, this.hAlign, this.vAlign, this.c, this.font, 1);
-    };
-    //For text alignment, see: http://www.w3schools.com/tags/canvas_textalign.asp
-    //valid horizontal align values are: left, center, right
-    //valid vertical align values are: top, bottom, middle, alphabetic, hanging
-    GText.DrawTxt = function (ctx, txt, x, y, hAlign, vAlign, color, font, alpha) {
-        if (hAlign === void 0) { hAlign = "left"; }
-        if (vAlign === void 0) { vAlign = "middle"; }
-        if (color === void 0) { color = 'White'; }
-        if (font === void 0) { font = "20px " + G.FONT_FAMILY; }
-        if (alpha === void 0) { alpha = 1; }
-        ctx.globalAlpha = alpha;
-        ctx.font = "900 " + font;
-        ctx.fillStyle = color;
-        ctx.textAlign = hAlign;
-        ctx.textBaseline = vAlign;
-        ctx.fillText(txt, x, y);
-    };
-    return GText;
-}(GameObject));
 /// <reference path="Engine/V.ts" />
-/// <reference path="Engine/U.ts" />
 /// <reference path="Polygon.ts" />
 /// <reference path="Bubble.ts" />
 var Hopper = (function (_super) {
@@ -848,7 +761,7 @@ var Hopper = (function (_super) {
         this.x = params.x | 0;
         this.y = params.y | 0;
         this.c = params.c | 0;
-        this.z = G.LYR_HOPPER;
+        this.z = LYR_HOPPER;
         this.rate = (params.rate == undefined || params.rate == 0) ? 1 : params.rate;
         this.cap = (params.cap == undefined) ? -1 : params.cap;
         this.curNum = this.cap;
@@ -909,20 +822,20 @@ var Hopper = (function (_super) {
                 //Make a bubble
                 var b = null;
                 if (this.c == 0)
-                    b = this.e.NewBubble(this.x, this.y, G.bubbleRad[U.RndI(0, G.bubbleRad.length)]);
+                    b = this.e.NewBubble(this.x, this.y, bubbleRad[RndI(0, bubbleRad.length)]);
                 else
-                    b = this.e.NewBubble(this.x, this.y, G.bubbleRad[U.RndI(0, G.bubbleRad.length)], this.c);
+                    b = this.e.NewBubble(this.x, this.y, bubbleRad[RndI(0, bubbleRad.length)], this.c);
                 if (b != null) {
                     b.vel.Set(this.aimVec.x * this.s, this.aimVec.y * this.s);
                     //play bubble sound
-                    Sounds.Play('bubble' + U.RndI(0, 3)); // + U.RndI(1,4));
+                    Sounds.Play('bubble' + RndI(0, 3)); // + RndI(1,4));
                 }
             }
         }
     };
     Hopper.prototype.DrawEditGizmos = function (ctx, mode) {
-        if (mode == G.MODE_EDITOR) {
-            GText.DrawTxt(ctx, "r:" + this.rate + " s:" + this.s, this.x, this.y + Hopper.h / 2, 'center', 'top');
+        if (mode == MODE_EDITOR) {
+            DrawTxt(ctx, "r:" + this.rate + " s:" + this.s, this.x, this.y + Hopper.h / 2, 'center', 'top');
         }
     };
     Hopper.prototype.Draw = function (ctx, mode) {
@@ -930,9 +843,9 @@ var Hopper = (function (_super) {
         // ctx.beginPath();
         // ctx.arc(this.x,this.y,3, 0, 2 * Math.PI);
         // ctx.fill();
-        if (mode === void 0) { mode = G.MODE_GAME; }
+        if (mode === void 0) { mode = MODE_GAME; }
         this.p.Draw(ctx);
-        ctx.setLineDash(G.lineSolid);
+        ctx.setLineDash(lineSolid);
         ctx.strokeStyle = 'DarkGray';
         ctx.lineWidth = 3;
         ctx.beginPath();
@@ -943,11 +856,11 @@ var Hopper = (function (_super) {
         ctx.lineTo(this.p.v[0].x, this.p.v[0].y);
         ctx.stroke();
         //Draw the hopper capacity
-        if (this.curNum != -1 && mode != G.MODE_EDITOR) {
-            GText.DrawTxt(ctx, this.curNum.toString(), this.p.centroid.x, this.p.centroid.y, 'center', 'middle', (this.p.c < 3) ? 'Black' : 'White');
+        if (this.curNum != -1 && mode != MODE_EDITOR) {
+            DrawTxt(ctx, this.curNum.toString(), this.p.centroid.x, this.p.centroid.y, 'center', 'middle', (this.p.c < 3) ? 'Black' : 'White');
         }
-        else if (this.cap != -1 && mode == G.MODE_EDITOR) {
-            GText.DrawTxt(ctx, this.cap.toString(), this.p.centroid.x, this.p.centroid.y, 'center', 'middle', (this.p.c < 3) ? 'Black' : 'White');
+        else if (this.cap != -1 && mode == MODE_EDITOR) {
+            DrawTxt(ctx, this.cap.toString(), this.p.centroid.x, this.p.centroid.y, 'center', 'middle', (this.p.c < 3) ? 'Black' : 'White');
         }
     };
     //hopper height
@@ -959,7 +872,6 @@ var Hopper = (function (_super) {
     return Hopper;
 }(GameObject));
 /// <reference path="Engine/GameObject.ts" />
-/// <reference path="Engine/U.ts" />
 var Pin = (function () {
     //rot:number;
     function Pin(params) {
@@ -973,8 +885,8 @@ var Pin = (function () {
         //Only pop bubbles if they're the same color as me or i'm the "All bubble" color
         if (this.c == 0 || this.c == b.c) {
             //Treat the pin like it is a circle
-            var magSq = U.DistSq(this.x, this.y, b.x, b.y);
-            if (magSq <= b.radius * b.radius + (G.PIN_SIZE * G.PIN_SIZE))
+            var magSq = DistSq(this.x, this.y, b.x, b.y);
+            if (magSq <= b.radius * b.radius + (PIN_SIZE * PIN_SIZE))
                 return true;
         }
         return false;
@@ -983,11 +895,11 @@ var Pin = (function () {
     //     this.rot += 2 * Math.PI * dt;
     // }
     Pin.prototype.DrawEditGizmos = function (ctx, mode) {
-        if (this.ue && mode != G.MODE_GAME) {
+        if (this.ue && mode != MODE_GAME) {
             ctx.globalAlpha = 0.3;
-            ctx.fillStyle = G.bubbleColors[this.c];
+            ctx.fillStyle = bubbleColors[this.c];
             ctx.beginPath();
-            ctx.arc(this.x, this.y, G.ED_SELECT_DIST * 1.5, 0, 2 * Math.PI);
+            ctx.arc(this.x, this.y, ED_SELECT_DIST * 1.5, 0, 2 * Math.PI);
             ctx.fill();
         }
     };
@@ -1005,19 +917,18 @@ var Pin = (function () {
         //Draw the cross
         ctx.globalAlpha = 1;
         ctx.lineWidth = 3;
-        ctx.setLineDash(G.lineSolid);
+        ctx.setLineDash(lineSolid);
         ctx.beginPath();
-        ctx.strokeStyle = G.bubbleColors[this.c];
-        ctx.moveTo(this.x - G.PIN_SIZE / 2, this.y);
-        ctx.lineTo(this.x + G.PIN_SIZE / 2, this.y);
-        ctx.moveTo(this.x, this.y - G.PIN_SIZE / 2);
-        ctx.lineTo(this.x, this.y + G.PIN_SIZE / 2);
+        ctx.strokeStyle = bubbleColors[this.c];
+        ctx.moveTo(this.x - PIN_SIZE / 2, this.y);
+        ctx.lineTo(this.x + PIN_SIZE / 2, this.y);
+        ctx.moveTo(this.x, this.y - PIN_SIZE / 2);
+        ctx.lineTo(this.x, this.y + PIN_SIZE / 2);
         ctx.stroke();
         //ctx.restore();
     };
     return Pin;
 }());
-/// <reference path="Engine/U.ts" />
 var Line = (function () {
     /**@constructor*/
     function Line(params) {
@@ -1033,38 +944,37 @@ var Line = (function () {
         var x3 = (this.x1 + this.x2) / 2;
         var y3 = (this.y1 + this.y2) / 2;
         ctx.globalAlpha = 0.5;
-        ctx.fillStyle = G.bubbleColors[this.c];
+        ctx.fillStyle = bubbleColors[this.c];
         ctx.beginPath();
-        ctx.arc(this.x1, this.y1, G.ED_SELECT_DIST, 0, 2 * Math.PI);
-        ctx.arc(this.x2, this.y2, G.ED_SELECT_DIST, 0, 2 * Math.PI);
+        ctx.arc(this.x1, this.y1, ED_SELECT_DIST, 0, 2 * Math.PI);
+        ctx.arc(this.x2, this.y2, ED_SELECT_DIST, 0, 2 * Math.PI);
         //Draw middle
         if (this.ue) {
             ctx.fill();
             ctx.beginPath();
-            ctx.rect(x3 - G.ED_SELECT_DIST, y3 - G.ED_SELECT_DIST, G.ED_SELECT_DIST * 2, G.ED_SELECT_DIST * 2);
+            ctx.rect(x3 - ED_SELECT_DIST, y3 - ED_SELECT_DIST, ED_SELECT_DIST * 2, ED_SELECT_DIST * 2);
         }
         ctx.fill();
     };
     Line.prototype.Length = function () {
-        return Math.sqrt(U.DistSq(this.x1, this.y1, this.x2, this.y2));
+        return Math.sqrt(DistSq(this.x1, this.y1, this.x2, this.y2));
     };
     Line.prototype.Draw = function (ctx) {
         ctx.globalAlpha = 1;
         ctx.lineWidth = 3;
         ctx.lineCap = 'butt';
         if (this.dashed)
-            ctx.setLineDash(G.lineDash);
+            ctx.setLineDash(lineDash);
         else
-            ctx.setLineDash(G.lineSolid);
+            ctx.setLineDash(lineSolid);
         ctx.beginPath();
-        ctx.strokeStyle = G.bubbleColors[this.c];
+        ctx.strokeStyle = bubbleColors[this.c];
         ctx.moveTo(this.x1, this.y1);
         ctx.lineTo(this.x2, this.y2);
         ctx.stroke();
     };
     return Line;
 }());
-/// <reference path="Engine/U.ts" />
 /// <reference path="Pin.ts" />
 /// <reference path="Line.ts" />
 /// <reference path="Hopper.ts" />
@@ -1072,11 +982,11 @@ var Level = (function () {
     /**@constructor*/
     function Level(params) {
         this.t = params.t;
-        this.pins = (params.pins == undefined) ? [] : U.DeserializeArray(params.pins, function (p) { return new Pin(p); });
-        this.lines = (params.lines == undefined) ? [] : U.DeserializeArray(params.lines, function (p) { return new Line(p); });
-        this.pens = (params.pens == undefined) ? [] : U.DeserializeArray(params.pens, function (p) { return new BubblePen(p); });
-        this.fans = (params.fans == undefined) ? [] : U.DeserializeArray(params.fans, function (p) { return new Fan(p); });
-        this.hoppers = (params.hoppers == undefined) ? [] : U.DeserializeArray(params.hoppers, function (p) { return new Hopper(p); });
+        this.pins = (params.pins == undefined) ? [] : DeserializeArray(params.pins, function (p) { return new Pin(p); });
+        this.lines = (params.lines == undefined) ? [] : DeserializeArray(params.lines, function (p) { return new Line(p); });
+        this.pens = (params.pens == undefined) ? [] : DeserializeArray(params.pens, function (p) { return new BubblePen(p); });
+        this.fans = (params.fans == undefined) ? [] : DeserializeArray(params.fans, function (p) { return new Fan(p); });
+        this.hoppers = (params.hoppers == undefined) ? [] : DeserializeArray(params.hoppers, function (p) { return new Hopper(p); });
         this.bi = (params.bi == undefined) ? [] : params.bi;
     }
     Level.prototype.SetEngine = function (e) {
@@ -1134,7 +1044,7 @@ var Level = (function () {
     Level.prototype.Draw = function (ctx, mode) {
         for (var i = 0; i < this.lines.length; i++) {
             this.lines[i].Draw(ctx);
-            if (mode == G.MODE_IN_GAME_EDITOR && this.lines[i].ue)
+            if (mode == MODE_IN_GAME_EDITOR && this.lines[i].ue)
                 this.lines[i].DrawEditGizmos(ctx);
         }
         for (var i = 0; i < this.pens.length; i++) {
@@ -1146,16 +1056,16 @@ var Level = (function () {
         }
         for (var i = 0; i < this.fans.length; i++) {
             this.fans[i].Draw(ctx);
-            if ((mode == G.MODE_IN_GAME_EDITOR && this.fans[i].ue) || mode == G.MODE_EDITOR)
+            if ((mode == MODE_IN_GAME_EDITOR && this.fans[i].ue) || mode == MODE_EDITOR)
                 this.fans[i].DrawEditGizmos(ctx, mode);
         }
-        if (mode != G.MODE_GAME) {
+        if (mode != MODE_GAME) {
             for (var i = 0; i < this.bi.length; i++) {
                 var bloc = this.bi[i];
                 //Fill the circle first
                 ctx.globalCompositeOperation = 'lighter';
                 ctx.globalAlpha = 0.8;
-                ctx.fillStyle = G.bubbleColors[this.bi[i].c];
+                ctx.fillStyle = bubbleColors[this.bi[i].c];
                 ctx.beginPath();
                 ctx.arc(bloc.x, bloc.y, bloc.r, 0, 2 * Math.PI);
                 ctx.fill();
@@ -1175,17 +1085,6 @@ var Level = (function () {
     };
     return Level;
 }());
-/**@const */
-var levels = { Lvls: [
-        { lines: [{ x1: 201, y1: 118, x2: 198, y2: 374 }, { x1: 201, y1: 118, x2: 300, y2: 193 }, { x1: 298, y1: 194, x2: 202, y2: 257 }, { x1: 202, y1: 256, x2: 297, y2: 317 }, { x1: 297, y1: 318, x2: 198, y2: 374 }, { x1: 315, y1: 247, x2: 314, y2: 361 }, { x1: 315, y1: 360, x2: 381, y2: 360 }, { x1: 380, y1: 359, x2: 382, y2: 245 }, { x1: 422, y1: 247, x2: 496, y2: 295 }, { x1: 497, y1: 296, x2: 421, y2: 362 }, { x1: 502, y1: 148, x2: 502, y2: 356 }, { x1: 504, y1: 253, x2: 570, y2: 283 }, { x1: 570, y1: 282, x2: 502, y2: 355 }, { x1: 585, y1: 152, x2: 584, y2: 360 }, { x1: 619, y1: 305, x2: 697, y2: 302 }, { x1: 699, y1: 302, x2: 653, y2: 256 }, { x1: 653, y1: 256, x2: 619, y2: 306 }, { x1: 619, y1: 306, x2: 647, y2: 360 }, { x1: 647, y1: 360, x2: 694, y2: 335 }, { x1: 311, y1: 386, x2: 405, y2: 388 }, { x1: 353, y1: 386, x2: 353, y2: 508 }, { x1: 399, y1: 436, x2: 399, y2: 508 }, { x1: 400, y1: 455, x2: 429, y2: 435 }, { x1: 429, y1: 435, x2: 450, y2: 449 }, { x1: 478, y1: 429, x2: 455, y2: 508 }, { x1: 463, y1: 482, x2: 496, y2: 481 }, { x1: 478, y1: 429, x2: 506, y2: 508 }, { x1: 539, y1: 426, x2: 538, y2: 506 }, { x1: 539, y1: 426, x2: 584, y2: 455 }, { x1: 584, y1: 455, x2: 540, y2: 475 }, { x1: 421, y1: 362, x2: 421, y2: 148 }], bi: [{ x: 653, y: 276, r: 15, c: 3 }, { x: 640, y: 290, r: 15, c: 3 }, { x: 555, y: 452, r: 15, c: 2 }, { x: 468, y: 498, r: 15, c: 1 }, { x: 493, y: 497, r: 15, c: 1 }, { x: 673, y: 291, r: 15, c: 3 }, { x: 550, y: 454, r: 15, c: 2 }, { x: 479, y: 472, r: 15, c: 1 }, { x: 224, y: 165, r: 25, c: 7 }, { x: 260, y: 191, r: 25, c: 7 }, { x: 224, y: 213, r: 25, c: 7 }, { x: 255, y: 316, r: 25, c: 6 }, { x: 221, y: 296, r: 25, c: 6 }, { x: 218, y: 337, r: 25, c: 6 }, { x: 438, y: 320, r: 25, c: 5 }, { x: 463, y: 301, r: 25, c: 5 }, { x: 445, y: 288, r: 25, c: 5 }, { x: 515, y: 319, r: 15, c: 4 }, { x: 530, y: 298, r: 15, c: 4 }, { x: 518, y: 278, r: 15, c: 4 }, { x: 548, y: 289, r: 15, c: 4 }] },
-        { t: "Plug the Hole", lines: [{ x1: 899, y1: 519, x2: 610, y2: 462 }, { x1: 1, y1: 518, x2: 273, y2: 463 }, { x1: 384, y1: 595, x2: 351, y2: 460 }, { x1: 502, y1: 597, x2: 535, y2: 460 }, { x1: 535, y1: 460, x2: 351, y2: 460 }, { x1: 610, y1: 462, x2: 565, y2: 268 }, { x1: 565, y1: 268, x2: 617, y2: 109 }, { x1: 617, y1: 109, x2: 234, y2: 110 }, { x1: 234, y1: 110, x2: 299, y2: 271 }, { x1: 299, y1: 271, x2: 273, y2: 463 }, { x1: 366, y1: 522, x2: 317, y2: 535 }], pens: [{ req: 5, p: { c: 4, v: [{ x: 235, y: 112 }, { x: 614, y: 110 }, { x: 564, y: 269 }, { x: 299, y: 271 }] } }], hoppers: [{ x: 41, y: 563, c: 2, s: 70, rate: 1, cap: 5, rot: 75 }, { x: 860, y: 563, c: 4, s: 70, rate: 1, cap: 5, rot: 285 }] },
-        { t: "Make it Crowded", lines: [{ x1: 444, y1: 307, x2: 508, y2: 441 }, { x1: 508, y1: 441, x2: 383, y2: 441 }, { x1: 444, y1: 307, x2: 383, y2: 441 }, { x1: 492, y1: 408, x2: 608, y2: 236 }, { x1: 398, y1: 410, x2: 288, y2: 241 }, { x1: 310, y1: 153, x2: 591, y2: 153 }, { x1: 591, y1: 153, x2: 608, y2: 236 }, { x1: 288, y1: 241, x2: 310, y2: 153 }], pens: [{ req: 3, p: { c: 6, a: 0.4, v: [{ x: 311, y: 153 }, { x: 589, y: 155 }, { x: 607, y: 235 }, { x: 492, y: 405 }, { x: 443, y: 307 }, { x: 398, y: 407 }, { x: 289, y: 239 }] } }], bi: [{ x: 441, y: 412, r: 15, c: 6 }, { x: 431, y: 385, r: 15, c: 6 }, { x: 457, y: 384, r: 15, c: 6 }, { x: 471, y: 415, r: 15, c: 6 }, { x: 445, y: 360, r: 15, c: 6 }, { x: 419, y: 411, r: 15, c: 6 }] },
-        { t: "Dashed Lines Discriminate", lines: [{ x1: 715, y1: 465, x2: 559, y2: 325 }, { x1: 208, y1: 477, x2: 356, y2: 332 }, { x1: 356, y1: 332, x2: 357, y2: 296 }, { x1: 357, y1: 296, x2: 282, y2: 296 }, { x1: 282, y1: 296, x2: 258, y2: 181 }, { x1: 559, y1: 325, x2: 558, y2: 290 }, { x1: 558, y1: 290, x2: 640, y2: 290 }, { x1: 640, y1: 290, x2: 651, y2: 175 }, { x1: 258, y1: 181, x2: 651, y2: 175, ue: true, c: 7, dashed: true }], pens: [{ req: 6, p: { c: 7, v: [{ x: 259, y: 180 }, { x: 650, y: 175 }, { x: 638, y: 288 }, { x: 283, y: 294 }] }, x: 0, y: 0 }], hoppers: [{ x: 405, y: 557, c: 4, rate: 0.5, cap: 5, s: 45 }, { x: 501, y: 557, c: 7, rate: 0.5, cap: 6, s: 45 }] },
-        { t: "Popping Pins", pins: [{ x: 539, y: 372, ue: true }, { x: 501, y: 373, ue: true }, { x: 459, y: 374, c: 3, ue: true }, { x: 417, y: 374, c: 3, ue: true }, { x: 383, y: 375, ue: true }, { x: 349, y: 376, ue: true }], lines: [{ x1: 651, y1: 530, x2: 568, y2: 376 }, { x1: 265, y1: 527, x2: 340, y2: 390 }, { x1: 265, y1: 527, x2: 333, y2: 597 }, { x1: 651, y1: 530, x2: 590, y2: 596 }, { x1: 568, y1: 376, x2: 597, y2: 173 }, { x1: 340, y1: 390, x2: 325, y2: 178 }, { x1: 597, y1: 173, x2: 895, y2: 4 }, { x1: 895, y1: 4, x2: 1, y2: 2 }, { x1: 1, y1: 2, x2: 325, y2: 178 }, { x1: 336, y1: 3, x2: 413, y2: 155 }, { x1: 499, y1: 151, x2: 584, y2: 3 }], pens: [{ req: 4, p: { c: 4, v: [{ x: 411, y: 153 }, { x: 324, y: 176 }, { x: 7, y: 2 }, { x: 337, y: 5 }] } }, { req: 4, p: { c: 7, v: [{ x: 339, y: 3 }, { x: 581, y: 4 }, { x: 498, y: 149 }, { x: 412, y: 151 }] } }, { req: 4, p: { c: 6, v: [{ x: 893, y: 4 }, { x: 597, y: 173 }, { x: 500, y: 149 }, { x: 584, y: 6 }] } }], hoppers: [{ x: 411, y: 563, c: 7, s: 70, rate: 1 }, { x: 506, y: 563, c: 3, s: 70, rate: 1 }, { x: 609, y: 521, c: 6, s: 70, rate: 1, rot: -45 }, { x: 309, y: 521, c: 4, s: 70, rate: 1, rot: 45 }] },
-        { t: "Pushy", lines: [{ x1: 604, y1: 3, x2: 604, y2: 278 }, { x1: 333, y1: 0, x2: 333, y2: 278 }, { x1: 333, y1: 278, x2: 213, y2: 262 }, { x1: 213, y1: 262, x2: 162, y2: 227 }, { x1: 604, y1: 278, x2: 754, y2: 267 }, { x1: 754, y1: 267, x2: 808, y2: 227 }, { x1: 604, y1: 3, x2: 898, y2: 3 }, { x1: 898, y1: 3, x2: 898, y2: 155 }, { x1: 333, y1: 0, x2: 3, y2: 0 }, { x1: 3, y1: 0, x2: 3, y2: 111 }], pens: [{ req: 5, p: { c: 2, v: [{ x: 604, y: 277 }, { x: 753, y: 267 }, { x: 898, y: 156 }, { x: 898, y: 3 }, { x: 604, y: 3 }] } }, { req: 5, p: { c: 5, v: [{ x: 333, y: 277 }, { x: 213, y: 261 }, { x: 0, y: 111 }, { x: 1, y: 0 }, { x: 333, y: 1 }] } }], fans: [{ f: 40, rot: -90, x: 626, y: 331, ue: true, aLen: 300 }, { f: 40, rot: 90, x: 324, y: 415, ue: true, aLen: 300 }], hoppers: [{ x: 407, y: 561, c: 5, s: 70, rate: 0.5, cap: 5 }, { x: 515, y: 562, c: 2, s: 70, rate: 0.75, cap: 5 }] },
-        { t: "Traffic Jam", lines: [{ x1: 0, y1: 595, x2: 898, y2: 595 }, { x1: 764, y1: 0, x2: 551, y2: 205 }, { x1: 901, y1: 174, x2: 615, y2: 274 }, { x1: 140, y1: 0, x2: 355, y2: 209 }, { x1: 0, y1: 127, x2: 283, y2: 281 }, { x1: 900, y1: 495, x2: 615, y2: 274 }, { x1: 780, y1: 596, x2: 551, y2: 318 }, { x1: 0, y1: 462, x2: 283, y2: 281 }, { x1: 358, y1: 324, x2: 132, y2: 594 }, { x1: 447, y1: 0, x2: 447, y2: 213 }, { x1: 900, y1: 1, x2: 0, y2: 0 }, { x1: 448, y1: 310, x2: 448, y2: 596 }], pens: [{ req: 8, p: { c: 4, v: [{ x: 143, y: 2 }, { x: 445, y: 4 }, { x: 447, y: 206 }, { x: 353, y: 207 }] } }, { req: 8, p: { c: 5, v: [{ x: 447, y: 3 }, { x: 761, y: 2 }, { x: 551, y: 203 }, { x: 447, y: 205 }] } }, { req: 8, p: { c: 6, v: [{ x: 134, y: 591 }, { x: 445, y: 593 }, { x: 445, y: 327 }, { x: 356, y: 325 }] } }, { req: 8, p: { c: 2, v: [{ x: 775, y: 592 }, { x: 448, y: 593 }, { x: 446, y: 329 }, { x: 552, y: 320 }] } }], fans: [{ f: 50, rot: -120, x: 717, y: 165, ue: true, c: 6, aLen: 200 }, { f: 50, rot: -405, x: 691, y: 406, ue: true, c: 4, aLen: 200 }, { f: 50, rot: -315, x: 248, y: 366, ue: true, c: 5, aLen: 200 }, { f: 50, rot: -585, x: 210, y: 148, ue: true, c: 2, aLen: 200 }], hoppers: [{ x: 858, y: 47, c: 2, s: 130, rate: 0.5, cap: 8, rot: 225 }, { x: 855, y: 556, c: 5, s: 70, rate: 0.25, cap: 8, rot: 315 }, { x: 48, y: 555, c: 4, s: 70, rate: 0.25, cap: 8, rot: 405 }, { x: 45, y: 47, c: 6, s: 130, rate: 0.5, cap: 8, rot: 495 }] },
-        { t: "Factorio", pins: [{ x: 253, y: 262, ue: true }, { x: 259, y: 298, ue: true }, { x: 239, y: 231, c: 6, ue: true }, { x: 264, y: 343, c: 7, ue: true }], lines: [{ x1: 1, y1: 521, x2: 248, y2: 499 }, { x1: 248, y1: 499, x2: 220, y2: 436 }, { x1: 220, y1: 436, x2: 255, y2: 370 }, { x1: 255, y1: 370, x2: 414, y2: 360 }, { x1: 414, y1: 360, x2: 435, y2: 416 }, { x1: 435, y1: 416, x2: 404, y2: 488 }, { x1: 248, y1: 499, x2: 404, y2: 488, ue: true, c: 3, dashed: true }, { x1: 414, y1: 360, x2: 603, y2: 349 }, { x1: 603, y1: 349, x2: 633, y2: 402 }, { x1: 633, y1: 402, x2: 588, y2: 480 }, { x1: 25, y1: 432, x2: 209, y2: 424, ue: true, c: 7, dashed: true }, { x1: 588, y1: 480, x2: 777, y2: 457, ue: true, c: 4 }, { x1: 777, y1: 457, x2: 752, y2: 387 }, { x1: 752, y1: 387, x2: 765, y2: 330 }, { x1: 765, y1: 330, x2: 899, y2: 298 }, { x1: 771, y1: 235, x2: 748, y2: 4 }, { x1: 172, y1: 233, x2: 1, y2: 254 }, { x1: 262, y1: 223, x2: 312, y2: 138 }, { x1: 312, y1: 50, x2: 262, y2: 3 }, { x1: 535, y1: 3, x2: 521, y2: 230 }, { x1: 899, y1: 4, x2: 262, y2: 3 }, { x1: 603, y1: 349, x2: 694, y2: 233, ue: true, c: 2 }, { x1: 262, y1: 223, x2: 521, y2: 230 }, { x1: 521, y1: 230, x2: 694, y2: 233, c: 4, dashed: true }, { x1: 771, y1: 235, x2: 694, y2: 233 }, { x1: 603, y1: 349, x2: 521, y2: 230, c: 6, ue: true }], pens: [{ req: 4, p: { c: 2, v: [{ x: 256, y: 370 }, { x: 412, y: 362 }, { x: 434, y: 415 }, { x: 404, y: 486 }, { x: 247, y: 497 }, { x: 221, y: 437 }] } }, { req: 4, p: { c: 6, v: [{ x: 416, y: 362 }, { x: 603, y: 350 }, { x: 629, y: 403 }, { x: 586, y: 481 }, { x: 407, y: 485 }, { x: 435, y: 416 }] } }, { req: 4, p: { c: 3, v: [{ x: 897, y: 299 }, { x: 766, y: 332 }, { x: 753, y: 388 }, { x: 776, y: 456 }, { x: 898, y: 454 }] } }, { req: 7, p: { c: 7, v: [{ x: 749, y: 5 }, { x: 897, y: 5 }, { x: 898, y: 235 }, { x: 771, y: 235 }] } }, { req: 5, p: { c: 5, v: [{ x: 259, y: 3 }, { x: 532, y: 4 }, { x: 519, y: 229 }, { x: 264, y: 222 }, { x: 311, y: 138 }, { x: 312, y: 50 }] } }, { req: 10, p: { c: 4, v: [{ x: 535, y: 5 }, { x: 748, y: 4 }, { x: 769, y: 234 }, { x: 522, y: 227 }] } }], fans: [{ f: 5, rot: 90, x: 234, y: 556, ue: true, aLen: 380 }, { f: 50, rot: 30, x: 160, y: 331, ue: true, c: 5, aLen: 205 }, { f: 10, rot: -90, x: 756, y: 265, ue: true, c: 6, aLen: 395 }, { f: 40, x: 693, y: 578, aLen: 240, ue: true }], hoppers: [{ x: 38, y: 563, s: 90, rate: 1, rot: 90 }] }
-    ] };
 // JSfxr
 // 2016: Modified from: https://github.com/mneubrand/jsfxr
 // and ported to Typescript by Bryan Castleberry
@@ -1634,7 +1533,6 @@ var Sounds = (function () {
     return Sounds;
 }());
 /// <reference path="Engine/GameObject.ts" />
-/// <reference path="Engine/U.ts" />
 /// <reference path="Engine/V.ts" />
 var Pop = (function (_super) {
     __extends(Pop, _super);
@@ -1659,7 +1557,7 @@ var Pop = (function (_super) {
         var r = radius * 0.1;
         for (var i = 0; i < Pop.slices; i++) {
             //Create some unit vectors
-            var vmag = U.RndI(Pop.minVel, Pop.maxVel);
+            var vmag = RndI(Pop.minVel, Pop.maxVel);
             var cx = Math.cos(theta);
             var cy = Math.sin(theta);
             this.particles[i].x = x + r * cx;
@@ -1684,7 +1582,7 @@ var Pop = (function (_super) {
         }
     };
     Pop.prototype.Draw = function (ctx) {
-        ctx.fillStyle = G.bubbleColors[this.c];
+        ctx.fillStyle = bubbleColors[this.c];
         //Draw the bubble itself
         var rdt = (this.timer - this.liveTime / 2) / (this.liveTime / 2);
         if (rdt > 0) {
@@ -1707,7 +1605,6 @@ var Pop = (function (_super) {
     return Pop;
 }(GameObject));
 /// <reference path="GameObject.ts" />
-/// <reference path="U.ts" />
 var Button = (function (_super) {
     __extends(Button, _super);
     /**
@@ -1721,7 +1618,7 @@ var Button = (function (_super) {
         this.overBtn = false;
         //Fired when the button is clicked
         this.beginClick = false;
-        this.z = G.LYR_BUTTON;
+        this.z = LYR_BUTTON;
         this.width = width;
         this.height = height;
         this.text = text;
@@ -1729,7 +1626,7 @@ var Button = (function (_super) {
         this.snd = snd;
     }
     Button.prototype.Update = function (dt) {
-        if (U.InRect(this.e.mouse.x, this.e.mouse.y, this.x, this.y, this.width, this.height)) {
+        if (InRect(this.e.mouse.x, this.e.mouse.y, this.x, this.y, this.width, this.height)) {
             if (!this.overBtn) {
                 this.overBtn = true;
                 Mouse.overUI++;
@@ -1790,9 +1687,9 @@ var Button = (function (_super) {
         }
         ctx.fill();
         ctx.stroke();
-        GText.DrawTxt(ctx, this.text, this.x + this.width / 2, this.y + this.height / 2, "center", "middle", Button.tcolor, Button.font);
+        DrawTxt(ctx, this.text, this.x + this.width / 2, this.y + this.height / 2, "center", "middle", Button.tcolor, Button.font);
     };
-    Button.font = "20px " + G.FONT_FAMILY;
+    Button.font = "20px " + FONT_FAMILY;
     Button.lwidth = 3;
     //button's normal color
     Button.color = 'DimGray';
@@ -1891,9 +1788,9 @@ var ModalStrip = (function (_super) {
         ctx.moveTo(this.x, this.y + this.height);
         ctx.lineTo(this.x + this.width, this.y + this.height);
         ctx.stroke();
-        GText.DrawTxt(ctx, this.title, this.x + this.width / 2, this.y + this.height / 8 + 5, 'center', 'middle', 'Yellow', '24px ' + G.FONT_FAMILY);
+        DrawTxt(ctx, this.title, this.x + this.width / 2, this.y + this.height / 8 + 5, 'center', 'middle', 'Yellow', '24px ' + FONT_FAMILY);
         for (var i = 0; i < this.msgs.length; i++) {
-            GText.DrawTxt(ctx, this.msgs[i], this.x + this.xoffset, this.y + this.height / 6 + 24 + 5 + 25 * i, this.hAlign, 'middle');
+            DrawTxt(ctx, this.msgs[i], this.x + this.xoffset, this.y + this.height / 6 + 24 + 5 + 25 * i, this.hAlign, 'middle');
         }
         for (var i = 0; i < this.buttons.length; i++) {
             this.buttons[i].Draw(ctx);
@@ -1905,7 +1802,6 @@ var ModalStrip = (function (_super) {
     ModalStrip.bHeight = 50;
     return ModalStrip;
 }(GameObject));
-/// <reference path="U.ts" />
 /// <reference path="V.ts" />
 /// <reference path="GameObject.ts" />
 /// <reference path="../Pop.ts" />
@@ -1941,7 +1837,7 @@ var Engine = (function () {
         this.c = canvas;
         this.backcolor = backColor;
         this.objects = [];
-        this.bpool = new Pool(G.maxBubbles, G.maxBubbles, true);
+        this.bpool = new Pool(maxBubbles, maxBubbles, true);
         this.ppool = new Pool(5);
         this.bubbles = [];
         this.keyboard = new Keyboard();
@@ -2041,7 +1937,7 @@ var Engine = (function () {
         //Draw our gameobjects
         for (var i = 0; i < this.objects.length; i++) {
             //Draw the bubbles at the correct z depth
-            if (!db && (this.objects[i].z >= G.LYR_BUBBLE || i == this.objects.length - 1)) {
+            if (!db && (this.objects[i].z >= LYR_BUBBLE || i == this.objects.length - 1)) {
                 db = true;
                 for (var i_1 = 0; i_1 < this.bubbles.length; i_1++) {
                     if (this.bubbles[i_1].active)
@@ -2074,7 +1970,7 @@ var Engine = (function () {
         var ind = this.bubbles.indexOf(b);
         if (ind > -1) {
             this.bubbles.splice(ind, 1);
-            this.numBubbles[G.bubbleColors[b.c]]--;
+            this.numBubbles[bubbleColors[b.c]]--;
             //this.numBubbles[G.bubbleColors[b.c]] = Math.max(0, this.numBubbles[G.bubbleColors[b.c]]--);
             if (pop) {
                 var pm = this.ppool.Spawn(function () {
@@ -2091,9 +1987,9 @@ var Engine = (function () {
         // }
         // console.log(b.c + ": " + this.GetNumBubbles(b.c) + " total:" + this.GetNumBubbles());
         if (snd) {
-            if (b.radius >= G.bubbleRad[2])
+            if (b.radius >= bubbleRad[2])
                 Sounds.Play('lowPop');
-            else if (b.radius >= G.bubbleRad[1])
+            else if (b.radius >= bubbleRad[1])
                 Sounds.Play('midPop');
             else
                 Sounds.Play('highPop');
@@ -2113,8 +2009,8 @@ var Engine = (function () {
         if (stayStill === void 0) { stayStill = false; }
         var b = this.bpool.Spawn(function () {
             var b = new Bubble();
-            b.maxVel = G.bmaxVel;
-            b.minVel = G.bminVel;
+            b.maxVel = bmaxVel;
+            b.minVel = bminVel;
             b.e = _this;
             return b;
         });
@@ -2138,7 +2034,7 @@ var Engine = (function () {
     };
     Engine.prototype.PointInBubble = function (point) {
         for (var i = 0; i < this.bubbles.length; i++) {
-            if (U.DistSq(this.bubbles[i].x, this.bubbles[i].y, point.x, point.y) < this.bubbles[i].radius * this.bubbles[i].radius) {
+            if (DistSq(this.bubbles[i].x, this.bubbles[i].y, point.x, point.y) < this.bubbles[i].radius * this.bubbles[i].radius) {
                 return this.bubbles[i];
             }
         }
@@ -2155,11 +2051,9 @@ var Engine = (function () {
     };
     return Engine;
 }());
-/// <reference path="../Engine/U.ts" />
 /// <reference path="../Engine/V.ts" />
 /// <reference path="../Engine/Engine.ts" />
 /// <reference path="../Engine/GameObject.ts" />
-/// <reference path="../GText.ts" />
 /// <reference path="../Bubble.ts" />
 /// <reference path="../Line.ts" />
 var MainGame = (function (_super) {
@@ -2169,8 +2063,8 @@ var MainGame = (function (_super) {
         _super.call(this);
         //middle:GText;
         //status:GText;
-        //Level 0 is the title screen
-        this.lvlNum = 0;
+        //Level -1 is the title screen
+        this.lvlNum = -1;
         this.win = false;
         //The current bubble if we are blowing one up
         this.cbubble = null;
@@ -2186,7 +2080,7 @@ var MainGame = (function (_super) {
         //this.e.Add(this.status);
         this.ige = this.e.Get('IGE');
         this.ige.Init(this);
-        this.LoadLevel(this.lvlNum);
+        //this.LoadLevel(this.lvlNum);
         this.state = this.GameControl;
     };
     MainGame.prototype.LoadLevel = function (lvlNum, showTitle) {
@@ -2194,7 +2088,7 @@ var MainGame = (function (_super) {
         this.e.freezeBubbles = false;
         this.win = false;
         this.e.RemoveAllBubbles();
-        this.allGoodTimer = 0;
+        this.allGoodTimer = lvlAllGoodWait;
         if (this.lvl) {
             this.lvl.Destroy(this.e);
         }
@@ -2206,7 +2100,7 @@ var MainGame = (function (_super) {
             this.lvl = new Level(levels.Lvls[lvlNum]);
             this.lvl.SetEngine(this.e);
             if (showTitle)
-                this.titleTimer = G.TITLE_DISPLAY_TIME;
+                this.titleTimer = TITLE_DISPLAY_TIME;
             else
                 this.titleTimer = 0;
             return true;
@@ -2225,7 +2119,7 @@ var MainGame = (function (_super) {
             this.state = this.WaitForModal;
             this.e.freezeBubbles = true;
             //Save progress
-            localStorage.setItem(G.ST_LVL, this.lvlNum.toString());
+            localStorage.setItem(ST_LVL, this.lvlNum.toString());
             return;
         }
         else if (this.e.modal.active && this.state == this.WaitForModal && this.e.modal.title != 'Level Complete') {
@@ -2234,9 +2128,9 @@ var MainGame = (function (_super) {
             this.e.modal.Show(false);
         }
         else if (this.state == this.GameControl && !this.e.modal.active) {
-            if (this.lvlNum == 0) {
-                var saveLvl = Number(localStorage.getItem(G.ST_LVL));
-                if (saveLvl > 0)
+            if (this.lvlNum == -1) {
+                var saveLvl = Number(localStorage.getItem(ST_LVL));
+                if (saveLvl > -1)
                     this.e.modal.Set("Main Menu", ["New Game", "Continue", "Help"]);
                 else
                     this.e.modal.Set("Main Menu", ["New Game", "Help"]);
@@ -2265,6 +2159,12 @@ var MainGame = (function (_super) {
         //Run the current game state
         this.state(dt);
     };
+    MainGame.prototype.TitleScreen = function () {
+        this.lvl.Destroy(this.e);
+        this.e.RemoveAllBubbles();
+        this.lvlNum = -1;
+        this.lvl = null;
+    };
     MainGame.prototype.WaitForModal = function (dt) {
         //Dont do anything if the modal is showing
         if (this.e.modal.active)
@@ -2277,7 +2177,7 @@ var MainGame = (function (_super) {
                 if (m.res == 'Retry')
                     this.LoadLevel(this.lvlNum);
                 else if (m.res == "Main Menu") {
-                    this.LoadLevel(0);
+                    this.TitleScreen();
                 }
                 else {
                     this.lvlNum++;
@@ -2285,8 +2185,8 @@ var MainGame = (function (_super) {
                 }
                 break;
             case 'Game Complete':
-                localStorage.removeItem(G.ST_LVL);
-                this.LoadLevel(0); //Start at the beginning
+                localStorage.removeItem(ST_LVL);
+                this.TitleScreen();
                 break;
             case 'Options':
                 this.e.freezeBubbles = false;
@@ -2304,31 +2204,30 @@ var MainGame = (function (_super) {
                     this.ige.SetLevel(this.lvl);
                 }
                 else if (m.res == "Main Menu") {
-                    this.LoadLevel(0);
+                    this.TitleScreen();
                 }
                 break;
             case 'Main Menu':
                 if (m.res == "New Game") {
-                    localStorage.removeItem(G.ST_LVL);
-                    this.LoadLevel(1, true); //Start at the beginning
+                    localStorage.removeItem(ST_LVL);
+                    this.LoadLevel(0, true); //Start at the beginning
                 }
                 else if (m.res == "Continue") {
-                    var saveLvl = Number(localStorage.getItem(G.ST_LVL));
-                    if (saveLvl > 0)
+                    var saveLvl = Number(localStorage.getItem(ST_LVL));
+                    if (saveLvl > -1)
                         this.LoadLevel(saveLvl + 1, true);
                     else
-                        this.LoadLevel(1, true);
+                        this.LoadLevel(0, true);
                 }
                 else if (m.res == "Help") {
                     this.state = this.WaitForModal; //stay in the modal state
-                    m.Set("Help", ["Ok"], ["Trap bubbles in the same-colored areas to complete each level.",
-                        "Trapping different-colored bubbles in a colored area is not allowed and",
-                        "will show as an 'Error!' in the affected area.",
-                        "Blow new white bubbles by right-clicking. Hold to make bigger bubbles.",
-                        "You can pop only WHITE bubbles by left-clicking.",
-                        "SOME levels have user-editable items that can be moved, colored, and/or rotated.",
-                        "Go to edit mode by opening the options menu with 'Escape' or the menu button.",
-                        "In Edit mode, editable items are indicated by a dot, ring, or rectangle."], 'left', 10);
+                    m.Set("Help", ["Ok"], ["Trap bubbles in same-colored areas to complete levels",
+                        "Different color bubbles in a colored area isn't allowed and shows as 'Error!'",
+                        "Right-click blows new white bubbles (hold to make larger)",
+                        "Left-click pops only WHITE bubbles",
+                        "In Edit Mode, items that can be moved, colored, and/or rotated are indicated",
+                        "by a dot, or rectangle",
+                        "Go to Edit Mode thru the menu via 'Escape' or the menu button"], 'left', 10);
                     m.Show(true);
                 }
                 break;
@@ -2338,7 +2237,17 @@ var MainGame = (function (_super) {
         }
     };
     MainGame.prototype.GameControl = function (dt) {
-        if (this.allGoodTimer > 0) {
+        if (!this.lvl) {
+            this.allGoodTimer -= dt;
+            if (this.allGoodTimer <= 0 && this.e.bubbles.length < 50) {
+                var b = this.e.NewBubble(RndI(40, this.e.c.width - 40), this.e.c.height + 40, bubbleRad[RndI(0, bubbleRad.length)], RndI(0, bubbleColors.length));
+                b.vel.Set(RndI(-90, 90), 0);
+                this.allGoodTimer = RndI(0.25, 2);
+            }
+            this.e.CollideBubbles();
+            return;
+        }
+        else if (this.allGoodTimer > 0) {
             this.allGoodTimer -= dt;
             if (this.allGoodTimer <= 0) {
                 this.DoModal(true);
@@ -2367,7 +2276,7 @@ var MainGame = (function (_super) {
         //     return;
         // }
         // else
-        if (this.e.mouse.buttonsDown[2] && this.cbubble == null && !Mouse.overUI && this.lvlNum > 0) {
+        if (this.e.mouse.buttonsDown[2] && this.cbubble == null && !Mouse.overUI && this.lvlNum > -1) {
             this.cbubble = this.e.NewBubble(this.e.mouse.x, this.e.mouse.y, 10, 0);
             if (this.cbubble != null) {
                 this.abs = Sounds.Play('blowUp');
@@ -2383,14 +2292,14 @@ var MainGame = (function (_super) {
             }
         }
         if (this.cbubble && this.e.mouse.buttonState[2]) {
-            this.cbubble.radius = Math.min(this.cbubble.radius + G.bubbleGrowthRate * dt, 60);
+            this.cbubble.radius = Math.min(this.cbubble.radius + bubbleGrowthRate * dt, 60);
             this.cbubble.mass = this.cbubble.radius / 50;
         }
         else if (this.cbubble && this.e.mouse.buttonsUp[2]) {
             if (this.abs)
                 this.abs.stop();
-            this.cbubble.vel.x = U.RndI(-2, 3);
-            this.cbubble.vel.y = U.RndI(10, 40);
+            this.cbubble.vel.x = RndI(-2, 3);
+            this.cbubble.vel.y = RndI(10, 40);
             this.cbubble.acc.y = 5;
             this.cbubble = null;
         }
@@ -2429,25 +2338,26 @@ var MainGame = (function (_super) {
             //TODO: Check for all win conditions for the current level to be satisfied
             if (this.lvl.AnyPins() && this.lvl.AllPensGood()) {
                 if (this.allGoodTimer == 0)
-                    this.allGoodTimer = G.lvlAllGoodWait;
+                    this.allGoodTimer = lvlAllGoodWait;
             }
             else
                 this.allGoodTimer = 0;
         }
     };
     MainGame.prototype.Draw = function (ctx) {
-        if (this.lvl) {
-            this.lvl.Draw(ctx, G.MODE_GAME);
-            if (this.lvlNum == 0) {
-                GText.DrawTxt(ctx, "Press escape for the menu", this.e.c.width / 2, this.e.c.height - 30, "center", "bottom", "orange");
-                GText.DrawTxt(ctx, "by recursor for js13k 2016", this.e.c.width / 2, this.e.c.height, "center", "bottom", "yellow", "16px " + G.FONT_FAMILY);
-            }
-            else if (this.titleTimer > 0) {
-                var alpha = U.Clamp(this.titleTimer, 0, 1);
+        if (this.lvlNum == -1) {
+            DrawTxt(ctx, "Bubble Trap!", this.e.c.width / 2, this.e.c.height / 2, "center", "middle", 'cyan', "92px " + FONT_FAMILY);
+            DrawTxt(ctx, "Escape for the menu", this.e.c.width / 2, this.e.c.height - 30, "center", "bottom", "orange");
+            DrawTxt(ctx, "by recursor for js13k 2016", this.e.c.width / 2, this.e.c.height, "center", "bottom", "yellow", "16px " + FONT_FAMILY);
+        }
+        else if (this.lvl) {
+            this.lvl.Draw(ctx, MODE_GAME);
+            if (this.titleTimer > 0) {
+                var alpha = Clamp(this.titleTimer, 0, 1);
                 ctx.globalAlpha = alpha * .9;
                 ctx.fillStyle = 'MidnightBlue';
                 ctx.fillRect(0, this.e.c.height / 2 - 50, this.e.c.width, 100);
-                GText.DrawTxt(ctx, this.lvl.t, this.e.c.width / 2, this.e.c.height / 2, "center", "middle", "white", "30px " + G.FONT_FAMILY, alpha);
+                DrawTxt(ctx, this.lvl.t, this.e.c.width / 2, this.e.c.height / 2, "center", "middle", "white", "30px " + FONT_FAMILY, alpha);
             }
         }
     };
@@ -2497,25 +2407,6 @@ window.addEventListener("load", function (ev) {
         e.Run();
     };
 });
-// class GEvent {
-//     receivers:any[];
-//     /**@constructor*/
-//     constructor(){
-//         this.receivers = [];
-//     }
-//     Add(callback:any){
-//         this.receivers.push(callback);
-//     }
-//     Remove(callback:any){
-//         this.receivers = this.receivers.filter(cb => cb != callback);
-//     }
-//     Call(parameters:any){
-//         for(let i = 0; i < this.receivers.length; i++){
-//             if(this.receivers[i]) this.receivers[i](parameters);
-//         }
-//     }
-//     Clear(){this.receivers = [];}
-// } 
 var Keyboard = (function () {
     /**@constructor*/
     function Keyboard() {
@@ -2607,22 +2498,22 @@ var Mouse = (function () {
             _this.buttonsUp[e.button] = true;
             _this.buttonState[e.button] = false;
         });
-        this.e.c.addEventListener('touchmove', function (e) {
-            _this.x = e.touches[0].clientX;
-            _this.y = e.touches[0].clientY;
-        });
-        this.e.c.addEventListener('touchstart', function (e) {
-            _this.x = e.touches[0].clientX;
-            _this.y = e.touches[0].clientY;
-            _this.buttonsDown[0] = true;
-            _this.buttonState[0] = true;
-        });
-        this.e.c.addEventListener('touchend', function (e) {
-            _this.x = e.touches[0].clientX;
-            _this.y = e.touches[0].clientY;
-            _this.buttonsUp[0] = true;
-            _this.buttonState[0] = false;
-        });
+        // this.e.c.addEventListener('touchmove', (e) =>{
+        //     this.x = e.touches[0].clientX;
+        //     this.y = e.touches[0].clientY;
+        // });
+        // this.e.c.addEventListener('touchstart', (e) =>{
+        //     this.x = e.touches[0].clientX;
+        //     this.y = e.touches[0].clientY;
+        //     this.buttonsDown[0]= true;
+        //     this.buttonState[0]= true;
+        // });
+        // this.e.c.addEventListener('touchend', (e) =>{
+        //     this.x = e.touches[0].clientX;
+        //     this.y = e.touches[0].clientY;
+        //     this.buttonsUp[0] = true;
+        //     this.buttonState[0]= false;
+        // });
     };
     Mouse.prototype.ClearState = function () {
         this.buttonsUp[0] = this.buttonsUp[1] = this.buttonsUp[2] = false;
@@ -2679,7 +2570,6 @@ var Pool = (function () {
     };
     return Pool;
 }());
-/// <reference path="../Engine/U.ts" />
 /// <reference path="../Engine/Button.ts" />
 /// <reference path="../Engine/GameObject.ts" />
 //this is the editor that the player
@@ -2707,7 +2597,7 @@ var InGameEditor = (function (_super) {
         this.colorMinus.active = false;
         this.colorPlus.clicked = function (g) { _this.IncColor(); };
         this.colorMinus.clicked = function (g) { _this.DecColor(); };
-        this.timer = G.LIVE_EDIT_BLINK_TIME;
+        this.timer = LIVE_EDIT_BLINK_TIME;
     };
     InGameEditor.prototype.OnActiveChanged = function (active) {
         if (!active) {
@@ -2735,11 +2625,11 @@ var InGameEditor = (function (_super) {
         this.timer -= dt;
         if (this.timer <= 0) {
             this.blinkEdit = !this.blinkEdit;
-            this.timer = G.LIVE_EDIT_BLINK_TIME;
+            this.timer = LIVE_EDIT_BLINK_TIME;
         }
     };
     InGameEditor.prototype.IncColor = function () {
-        this.colorIndex = (this.colorIndex + 1) % G.bubbleColors.length;
+        this.colorIndex = (this.colorIndex + 1) % bubbleColors.length;
         if (this.colorIndex == 1)
             this.colorIndex++;
         //this.color = G.bubbleColors[this.colorIndex];
@@ -2753,10 +2643,10 @@ var InGameEditor = (function (_super) {
     };
     InGameEditor.prototype.DecColor = function () {
         this.colorIndex--;
-        if (this.colorIndex < 0)
-            this.colorIndex = G.bubbleColors.length - 1;
-        else if (this.colorIndex == 1)
+        if (this.colorIndex == 1)
             this.colorIndex--;
+        else if (this.colorIndex < 0)
+            this.colorIndex = bubbleColors.length - 1;
         if (this.heldItem) {
             // if(!!this.heldItem.SetColor){
             //     this.heldItem.SetColor(this.colorIndex);
@@ -2764,7 +2654,6 @@ var InGameEditor = (function (_super) {
             // else
             this.heldItem.c = this.colorIndex;
         }
-        //this.color = G.bubbleColors[this.colorIndex];   
     };
     InGameEditor.prototype.SetHeld = function (item) {
         this.heldItem = item;
@@ -2802,7 +2691,7 @@ var InGameEditor = (function (_super) {
             for (var i = 0; i < this.lvl.lines.length; i++) {
                 if (!this.lvl.lines[i].ue)
                     continue;
-                this.ep = U.GetClosestEndpoint(mx, my, this.lvl.lines[i], G.ED_SELECT_DIST);
+                this.ep = GetClosestEndpoint(mx, my, this.lvl.lines[i], ED_SELECT_DIST);
                 if (this.ep > 0) {
                     this.SetHeld(this.lvl.lines[i]);
                     this.offset1 = new V(this.heldItem.x1, this.heldItem.y1).Sub(new V(mx, my));
@@ -2817,12 +2706,12 @@ var InGameEditor = (function (_super) {
                 if (!this.lvl.fans[i].ue)
                     continue;
                 //Rotate the fan?
-                if (U.DistSq(this.lvl.fans[i].rp.x, this.lvl.fans[i].rp.y, mx, my) <= G.ED_SELECT_DIST * G.ED_SELECT_DIST) {
+                if (DistSq(this.lvl.fans[i].rp.x, this.lvl.fans[i].rp.y, mx, my) <= ED_SELECT_DIST * ED_SELECT_DIST) {
                     this.SetHeld(this.lvl.fans[i]);
                     this.ep = 1;
                     return;
                 }
-                else if (this.lvl.fans[i].wp.InPolygon(mx, my) || U.DistSq(this.lvl.fans[i].x, this.lvl.fans[i].y, mx, my) <= G.ED_SELECT_DIST * G.ED_SELECT_DIST * 4) {
+                else if (this.lvl.fans[i].wp.InPolygon(mx, my) || DistSq(this.lvl.fans[i].x, this.lvl.fans[i].y, mx, my) <= ED_SELECT_DIST * ED_SELECT_DIST * 4) {
                     this.SetHeld(this.lvl.fans[i]);
                     this.offset1 = new V(this.heldItem.x, this.heldItem.y).Sub(new V(mx, my));
                     this.ep = 3;
@@ -2833,7 +2722,7 @@ var InGameEditor = (function (_super) {
             for (var i = 0; i < this.lvl.pins.length; i++) {
                 if (!this.lvl.pins[i].ue)
                     continue;
-                if (U.DistSq(this.lvl.pins[i].x, this.lvl.pins[i].y, mx, my) <= G.PIN_SIZE * G.PIN_SIZE) {
+                if (DistSq(this.lvl.pins[i].x, this.lvl.pins[i].y, mx, my) <= PIN_SIZE * PIN_SIZE) {
                     this.SetHeld(this.lvl.pins[i]);
                     this.offset1 = new V(this.heldItem.x, this.heldItem.y).Sub(new V(mx, my));
                     return;
@@ -2843,7 +2732,7 @@ var InGameEditor = (function (_super) {
         else if (this.e.mouse.buttonState[0] && !Mouse.overUI) {
             if (this.heldItem instanceof Line) {
                 if (this.ep == 1 || this.ep == 2) {
-                    var p1 = U.ClosestPointOnCircle(mx, my, this.midP.x, this.midP.y, this.lineLen / 2);
+                    var p1 = ClosestPointOnCircle(mx, my, this.midP.x, this.midP.y, this.lineLen / 2);
                     this.heldItem.x1 = p1.x;
                     this.heldItem.y1 = p1.y;
                     this.heldItem.x2 = p1.x - 2 * (p1.x - this.midP.x);
@@ -2863,7 +2752,7 @@ var InGameEditor = (function (_super) {
                     this.heldItem.Recalc();
                 }
                 else if (this.ep == 1) {
-                    var p = U.ClosestPointOnCircle(mx, my, this.heldItem.x, this.heldItem.y, 60);
+                    var p = ClosestPointOnCircle(mx, my, this.heldItem.x, this.heldItem.y, 60);
                     // let p = this.cp.Copy();
                     p.Set(p.x - this.heldItem.x, p.y - this.heldItem.y);
                     //This gives us the angle between (-1, 0) and the point on our imaginary circle
@@ -2878,13 +2767,12 @@ var InGameEditor = (function (_super) {
         }
     };
     InGameEditor.prototype.Draw = function (ctx) {
-        if (this.lvl)
-            this.lvl.Draw(ctx, G.MODE_IN_GAME_EDITOR);
+        this.lvl.Draw(ctx, MODE_IN_GAME_EDITOR);
         //If we have a line selected, draw it again to make it look ... selected
         if (this.heldItem && !!this.heldItem.DrawEditGizmos)
-            this.heldItem.DrawEditGizmos(ctx, G.MODE_IN_GAME_EDITOR);
+            this.heldItem.DrawEditGizmos(ctx, MODE_IN_GAME_EDITOR);
         if (!this.blinkEdit)
-            GText.DrawTxt(ctx, "Edit Mode", 0, 0, "left", "top", 'Yellow');
+            DrawTxt(ctx, "Edit Mode", 0, 0, "left", "top", 'Yellow');
     };
     return InGameEditor;
 }(GameObject));
